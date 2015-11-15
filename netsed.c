@@ -106,6 +106,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <signal.h>
 #include <netdb.h>
 #include <time.h>
+#include <regex.h>
 
 #ifdef __linux__
 /// Define for transparent proxy with linux netfilter.
@@ -509,6 +510,8 @@ void parse_params(int argc,char* argv[]) {
   rule=malloc((argc-optind)*sizeof(struct rule_s));
   rule_live=malloc((argc-optind)*sizeof(int));
   // parse rules
+  regex_t re;
+  int re_err;
   for (i=optind;i<argc;i++) {
     char *fs=0, *ts=0, *cs=0;
     printf("[*] Parsing rule %s...\n",argv[i]);
@@ -521,6 +524,16 @@ void parse_params(int argc,char* argv[]) {
     ts++;
     cs=strchr(ts,'/');
     if (cs) { *cs=0; cs++; }
+    re_err = regcomp(&re, fs, REG_EXTENDED);
+    if ( re_err != 0)
+    {
+      char re_err_text[80];
+      char err[150];
+      regerror(re_err, &re, re_err_text, sizeof(re_err_text));
+      sprintf(err, "Failed to compile regex /%s/: %s", fs, re_err_text);
+      error(err);
+    }
+    regfree(&re);
     rule[rules].forig=fs;
     rule[rules].torig=ts;
     rule[rules].dir = ALL;
@@ -530,7 +543,9 @@ void parse_params(int argc,char* argv[]) {
         cs++;
       }
     if (cs && *cs) /* Only non-trivial quantifiers count. */
-      rule_live[rules]=atoi(cs); else rule_live[rules]=-1;
+      rule_live[rules]=atoi(cs);
+    else
+      rule_live[rules]=-1;
     shrink_to_binary(&rule[rules]);
 //    printf("DEBUG: (%s) (%s)\n",rule[rules].from,rule[rules].to);
     rules++;
