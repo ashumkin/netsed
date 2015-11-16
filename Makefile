@@ -1,4 +1,4 @@
-CFLAGS += -Wall -fomit-frame-pointer
+CFLAGS += -Wall -fomit-frame-pointer -lpcre
 PREFIX ?= /usr/local
 
 ifeq "$(shell uname -s)" "SunOS"

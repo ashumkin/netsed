@@ -106,7 +106,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <signal.h>
 #include <netdb.h>
 #include <time.h>
-#include <regex.h>
+#include <pcre.h>
 
 #ifdef __linux__
 /// Define for transparent proxy with linux netfilter.
@@ -127,7 +127,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #endif
 
 /// Current version (recovered by Makefile for several release checks)
-#define VERSION "1.2"
+#define VERSION "1.3"
 /// max size for buffers
 #define MAX_BUF  100000
 
@@ -146,6 +146,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 /// Timeout for udp 'connections' in seconds
 #define UDP_TIMEOUT 30
+
+// for PCRE
+#define OVECCOUNT 30    /* should be a multiple of 3 */
 
 /// Rule item.
 struct rule_s {
@@ -455,6 +458,13 @@ void shrink_to_binary(struct rule_s* r) {
   }
 }
 
+pcre *test_re(const char *pattern, const char *error, int *re_error_offset)
+{
+  pcre *re;
+  re = pcre_compile(pattern, 0, &error, re_error_offset, NULL);
+  return re;
+}
+
 /// parse the command line parameters
 /// @param argc number of arguments
 /// @param argv array of string parameters
@@ -510,8 +520,7 @@ void parse_params(int argc,char* argv[]) {
   rule=malloc((argc-optind)*sizeof(struct rule_s));
   rule_live=malloc((argc-optind)*sizeof(int));
   // parse rules
-  regex_t re;
-  int re_err;
+  pcre *re;
   for (i=optind;i<argc;i++) {
     char *fs=0, *ts=0, *cs=0;
     printf("[*] Parsing rule %s...\n",argv[i]);
@@ -524,16 +533,15 @@ void parse_params(int argc,char* argv[]) {
     ts++;
     cs=strchr(ts,'/');
     if (cs) { *cs=0; cs++; }
-    re_err = regcomp(&re, fs, REG_EXTENDED);
-    if ( re_err != 0)
+    char re_err_text[80];
+    int re_error_offset;
+    if (!test_re(fs, re_err_text, &re_error_offset))
     {
-      char re_err_text[80];
       char err[150];
-      regerror(re_err, &re, re_err_text, sizeof(re_err_text));
-      sprintf(err, "Failed to compile regex /%s/: %s", fs, re_err_text);
+      sprintf(err, "PCRE (/%s/) compilation failed at offset %d: %s\n", fs, re_error_offset, re_err_text);
       error(err);
     }
-    regfree(&re);
+    pcre_free(&re);
     rule[rules].forig=fs;
     rule[rules].torig=ts;
     rule[rules].dir = ALL;
@@ -608,53 +616,57 @@ void bind_and_listen(int af, int tcp, const char *portstr) {
     error("Listening socket failed.");
 }
 
-/// Buffer for receiving a single packet or datagram
-char buf[MAX_BUF];
-/// Buffer containing modified packet or datagram
-char b2[MAX_BUF];
-
-static int match_regex(regex_t *r, const char *to_match)
+int match_regex(pcre *re, char *to_match, int to_match_len)
 {
     /* "P" is a pointer into the string which points to the end of the
        previous match. */
     const char *p = to_match;
-    /* "N_matches" is the maximum number of matches allowed. */
-    const int n_matches = 10;
     /* "M" contains the matches found. */
-    regmatch_t m[n_matches];
+    int matches[OVECCOUNT];
 
     while (1) {
         int i = 0;
-        int nomatch = regexec(r, p, n_matches, m, REG_EXTENDED);
-        if (nomatch) {
-            printf ("No more matches.\n");
-            return nomatch;
+        int re_res = pcre_exec(re, NULL, to_match, to_match_len, *p, 0, matches, OVECCOUNT);
+        if (re_res < 0) {
+          switch(re_res) {
+            case PCRE_ERROR_NOMATCH:
+              printf ("No more matches.\n");
+          }
+          return re_res;
+        } else if (re_res == 0) {
+          re_res = OVECCOUNT / 3;
+          printf("First %d occurencies only", re_res);
         }
-        for (i = 0; i < n_matches; i++) {
-            int start;
-            int finish;
-            if (m[i].rm_so == -1) {
-                break;
-            }
-            start = m[i].rm_so + (p - to_match);
-            finish = m[i].rm_eo + (p - to_match);
-            if (i == 0) {
-                printf ("$& is ");
-            }
-            else {
-                printf ("$%d is ", i);
-            }
-            printf ("'%.*s' (bytes %d:%d)\n", (finish - start),
-                    to_match + start, start, finish);
+        for (i = 0; i < re_res; i++) {
+            char *substring;
+            substring = to_match + matches[2 * i];
+            int substr_len = matches[2 * i + 1] - matches[2 * i];
+            printf("%2d: %.*s\n", i, substr_len, substring);
         }
-        p += m[0].rm_eo;
     }
     return 0;
 }
 
-int match_re(const char *re, const char *str)
+int match_re(const char *re_str, int re_str_len, char *str, int str_len)
 {
+  pcre *re;
+  char re_err_text[80];
+  int re_error_offset;
+  int res;
+  re = test_re(re_str, re_err_text, &re_error_offset);
+  if (!re) {
+    printf("    Regexp '%s' failed?!", re_str);
+    res = 1;
+  } else if (match_regex(re, str, str_len) != 0) {
+    res = 0;
+  }
+  return res;
 }
+
+/// Buffer for receiving a single packet or datagram
+char buf[MAX_BUF];
+/// Buffer containing modified packet or datagram
+char b2[MAX_BUF];
 
 /// Applies the rules to global buffer buf.
 /// @param siz useful size of the data in buf.
@@ -665,29 +677,25 @@ int sed_the_buffer(int siz, int* live, int dir) {
   int newsize=0;
   int changes=0;
   int gotchange=0;
-  for (i=0;i<siz;) {
-    gotchange=0;
-    for (j=0;j<rules;j++) {
-      if (rule[j].dir != ALL && rule[j].dir !=dir) continue;
+  for (j=0;j<rules;j++) {
+    if (rule[j].dir != ALL && rule[j].dir !=dir) continue;
 
-      if ((!match_re(&buf[i], rule[j].from, rule[j].fs)) && (live[j]!=0)) {
-      //if ((!memcmp(&buf[i],rule[j].from,rule[j].fs)) && (live[j]!=0)) {
-        changes++;
-        gotchange=1;
-        printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
-        live[j]--;
-        if (live[j]==0) printf("    (rule just expired)\n");
-        memcpy(&b2[newsize],rule[j].to,rule[j].ts);
-        newsize+=rule[j].ts;
-        i+=rule[j].fs;
-        break;
-      }
+    if ((!match_re(rule[j].from, rule[j].fs, &buf[i], siz)) && (live[j] != 0)) {
+      changes++;
+      gotchange=1;
+      printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
+      live[j]--;
+      if (live[j]==0) printf("    (rule just expired)\n");
+      memcpy(&b2[newsize],rule[j].to,rule[j].ts);
+      newsize+=rule[j].ts;
+      i+=rule[j].fs;
+      break;
     }
-    if (!gotchange) {
-      b2[newsize]=buf[i];
-      newsize++;
-      i++;
-    }
+  }
+  if (!gotchange) {
+    b2[newsize]=buf[i];
+    newsize++;
+    i++;
   }
   if (!changes) printf("[*] Forwarding untouched packet of size %d.\n",siz);
   else printf("[*] Done %d replacements, forwarding packet of size %d (orig %d).\n",
