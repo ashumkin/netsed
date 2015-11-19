@@ -1,5 +1,6 @@
 
   netsed 1.2       (C) 2010-2012  Julien VdG <julien@silicone.homelinux.org>
+                   (C) 2015          Alexey Shumkin <alex.crezoff@gmail.com>
   --------------------------------------------------------------------------
 
   This work is based on the original netsed:
@@ -121,7 +122,7 @@ have 'rport' - remote port number, and up to 50 filtering rules.
 
 General replacement rules syntax is: 
 
-   s/pat1/pat2[/expire]
+   s/pat1/pat2[/-N[:M]][+A:C][/expire]
 
 This will replace all occurrences of pat1 with pat2 in matching packets.
 An additional parameter (count) can be used to expire rule after 'count'

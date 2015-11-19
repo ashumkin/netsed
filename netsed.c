@@ -1,5 +1,6 @@
 /*
-  netsed 1.2       (C) 2010-2012  Julien VdG <julien@silicone.homelinux.org>
+  netsed 1.3       (C) 2010-2012  Julien VdG <julien@silicone.homelinux.org>
+                   (C) 2015          Alexey Shumkin <alex.crezoff@gmail.com>
   --------------------------------------------------------------------------
 
   This work is based on the original netsed:
@@ -126,7 +127,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #endif
 
 /// Current version (recovered by Makefile for several release checks)
-#define VERSION "1.2"
+#define VERSION "1.3 mod"
 /// max size for buffers
 #define MAX_BUF  100000
 
@@ -162,6 +163,14 @@ struct rule_s {
   int ts;
   /// direction of rule
   int dir;
+  /// deletion index
+  int delindex;
+  /// deletion bytes count
+  int delcount;
+  /// appending index
+  int append;
+  /// byte to append
+  int appendbyte;
 };
 
 /// Rule TTL items
@@ -169,13 +178,11 @@ struct rule_item {
   /// TTL
   int count;
   /// deletion index
-  int deletion;
+  int delindex;
   /// deletion bytes count
   int delcount;
   /// appending index
   int append;
-  /// byte to append
-  int appendbyte;
 };
 
 /// Direction specifier of replacement rule.
@@ -287,7 +294,7 @@ void usage_hints(const char* why) {
   ERR("            address of incoming connection, see README)\n");
   ERR("  rport   - destination port (0 = dst port of incoming connection)\n");
   ERR("  ruleN   - replacement rules (see below)\n\n");
-  ERR("General syntax of replacement rules: s/pat1/pat2[/expire]\n\n");
+  ERR("General syntax of replacement rules: s/pat1/pat2[/expire][-N[:M]][+X:C]\n\n");
   ERR("This will replace all occurrences of pat1 with pat2 in any matching packet.\n");
   ERR("An additional parameter, 'expire' of the form [CHAR][NUM], can be used to\n");
   ERR("expire a rule after NUM successful substitutions during a given connection.\n");
@@ -305,6 +312,14 @@ void usage_hints(const char* why) {
   ERR("  's/andrew/mike/o'     - the server will always see 'mike', never 'andrew'\n\n");
   ERR("  's/Rilke/Proust/o s/Proust/Rilke/i'\n");
   ERR("                        - let Rilke travel incognito as Proust\n\n");
+  ERR("  's/%%FF%%AA/%%AA%%FF/i-12:3'\n");
+  ERR("  's/%%FF%%AA/%%AA%%FF/i/-12:3'\n");
+  ERR("                        - Exchange \\xFF0 and \\xAA and delete three bytes after 12th byte\n");
+  ERR("                          from the beginning of sequence in server's responses\n\n");
+  ERR("  's/%%FF%%AA/%%AA%%FF/o+11:64'\n");
+  ERR("  's/%%FF%%AA/%%AA%%FF/o/+11:64'\n");
+  ERR("                        - Exchange \\xFF0 and \\xAA and add byte with code 64 after 11th byte\n");
+  ERR("                          from the beginning of sequence in client's requests\n\n");
   ERR("Rules are not active across packet boundaries, and they are evaluated\n");
   ERR("from first to last, not yet expired rule, as stated on the command line.\n");
   exit(1);
@@ -542,6 +557,30 @@ void parse_params(int argc,char* argv[]) {
         rule[rules].dir = (*cs=='i'||*cs=='I') ? IN : OUT;
         cs++;
       }
+    rule[rules].delindex = 0;
+    rule[rules].delcount = 1;
+    rule[rules].append = 0;
+    rule[rules].appendbyte = 0;
+    while (cs && *cs && strchr("/", *cs))
+      cs++;
+    /* Is there a deletion part?  */
+    if (cs && *cs && strchr("-", *cs)) {
+      rule[rules].delindex = strtol(++cs, &cs, 10);
+      if (cs && *cs && strchr(":", *cs)) {
+        rule[rules].delcount = strtol(++cs, &cs, 10);
+      }
+      DBG("Delete %d byte(s) after %d\n", rule[rules].delcount, rule[rules].delindex);
+    }
+    /* Is there an appending part?  */
+    if (cs && *cs && strchr("+", *cs)) {
+      rule[rules].append = strtol(++cs, &cs, 10);
+      if (cs && *cs && strchr(":", *cs)) {
+        rule[rules].appendbyte = strtol(++cs, &cs, 10);
+      }
+      DBG("Append chr(%d) after %d byte(s)\n", rule[rules].appendbyte, rule[rules].append);
+    }
+    while (cs && *cs && strchr("/", *cs))
+      cs++;
     if (cs && *cs) { /* Only non-trivial quantifiers count. */
       rule_live[rules].count = atoi(cs);
       // to set rule with no count? nonsense
@@ -628,31 +667,96 @@ int sed_the_buffer(int siz, struct rule_item* live, int dir) {
   int newsize=0;
   int changes=0;
   int gotchange=0;
+  int active_deletion_rule = -1;
+  int active_append_rule = -1;
+  // find the "active" rule for the deletion
+  for (j = 0; j < rules; j++)
+    if (live[j].delindex > 0)
+      active_deletion_rule = j;
+  // find the "active" rule for the appending
+  for (j = 0; j < rules; j++)
+    if (live[j].append > 0)
+      active_append_rule = j;
   for (i=0;i<siz;) {
     gotchange=0;
-    for (j=0;j<rules;j++) {
-      if (rule[j].dir != ALL && rule[j].dir !=dir) continue;
+    if (active_deletion_rule == -1 && active_append_rule == -1) {
+      // apply rules only if no "active" deletion/appending rules
+      for (j=0;j<rules;j++) {
+        if (rule[j].dir != ALL && rule[j].dir !=dir) continue;
 
-      if ((! memcmp(&buf[i], rule[j].from, rule[j].fs)) && (live[j].count != 0)) {
-        changes++;
-        gotchange=1;
-        printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
-        live[j].count--;
-        if (live[j].count == 0) printf("    (rule just expired)\n");
-        memcpy(&b2[newsize],rule[j].to,rule[j].ts);
-        newsize+=rule[j].ts;
-        i+=rule[j].fs;
-        break;
+        if ((! memcmp(&buf[i], rule[j].from, rule[j].fs)) && live[j].count != 0) {
+          changes++;
+          gotchange=1;
+          printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
+          live[j].count--;
+          if (live[j].count == 0) printf("    (rule just expired)\n");
+          if ((live[j].delindex = rule[j].delindex) > 0) {
+            live[j].delindex += i;
+            live[j].delcount = rule[j].delcount;
+            DBG("Deleting %d bytes after %d bytes\n", live[j].delcount, live[j].delindex);
+            active_deletion_rule = j;
+          }
+          if ((live[j].append = rule[j].append) > 0) {
+            live[j].append += i;
+            DBG("Append chr(%d) after %d bytes\n", rule[j].appendbyte, live[j].append);
+            active_append_rule = j;
+          }
+          memcpy(&b2[newsize],rule[j].to,rule[j].ts);
+          newsize+=rule[j].ts;
+          i+=rule[j].fs;
+          break;
+        }
       }
     }
     if (!gotchange) {
-      b2[newsize]=buf[i];
-      newsize++;
+      if ((active_deletion_rule == -1) \
+          || (i < live[active_deletion_rule].delindex) \
+          || (i > live[active_deletion_rule].delindex + live[active_deletion_rule].delcount)) {
+        if (active_append_rule >= 0 \
+            && i == live[active_append_rule].append) {
+          changes++;
+          DBG("Appending chr(%d) at %d\n", rule[active_append_rule].appendbyte, newsize);
+          // we did not cache .appendbyte (so, get from the rule)
+          memcpy(&b2[newsize], &(rule[active_append_rule].appendbyte), 1);
+          // 1 byte is to append... (yet)
+          live[active_append_rule].append = 0;
+          active_append_rule = -1;
+          DBG("All bytes appended");
+          newsize++;
+        }
+        b2[newsize]=buf[i];
+        newsize++;
+      } else {
+        changes++;
+        DBG("Skipping %dth byte\n", i);
+        if (--(live[active_deletion_rule].delcount) == 0) {
+          DBG("All bytes deleted\n");
+          live[active_deletion_rule].delindex = 0;
+          // "turn off"
+          active_deletion_rule = -1;
+        } else
+          // move forward (we already decreased del count)
+          live[active_deletion_rule].delindex++;
+      }
       i++;
     }
   }
+  if (active_deletion_rule > -1) {
+    DBG("Deleted bytes are in the next packet\n");
+    // if we have unfinished deletion rule
+    // decrease its index for the next packet
+    live[active_deletion_rule].delindex -= siz;
+    DBG("Next index is %d\n", live[active_deletion_rule].delindex);
+  }
+  if (active_append_rule > -1) {
+    DBG("Will append bytes in the next packet\n");
+    // if we have unfinished append rule
+    // decrease its index for the next packet
+    live[active_append_rule].append -= siz;
+    DBG("Next index is %d\n", live[active_append_rule].append);
+  }
   if (!changes) printf("[*] Forwarding untouched packet of size %d.\n",siz);
-  else printf("[*] Done %d replacements, forwarding packet of size %d (orig %d).\n",
+  else printf("[*] Done %d modification(s), forwarding packet of size %d (orig %d).\n",
               changes,newsize,siz);
   return newsize;
 }
@@ -739,8 +843,9 @@ int main(int argc,char* argv[]) {
   struct tracker_s * conn;
 
   memset(&fixedhost, '\0', sizeof(fixedhost));
-  printf("netsed " VERSION " by Julien VdG <julien@silicone.homelinux.org>\n"
-         "      based on 0.01c from Michal Zalewski <lcamtuf@ids.pl>\n");
+  printf("netsed " VERSION " by Alexey Shumkin <alex.crezoff@gmail.com>\n"
+         "      based on 1.2 from Julien VdG <julien@silicone.homelinux.org>\n"
+         "      which is based on 0.01c from Michal Zalewski <lcamtuf@ids.pl>\n");
   setbuffer(stdout,NULL,0);
 
   parse_params(argc, argv);
