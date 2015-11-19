@@ -164,6 +164,20 @@ struct rule_s {
   int dir;
 };
 
+/// Rule TTL items
+struct rule_item {
+  /// TTL
+  int count;
+  /// deletion index
+  int deletion;
+  /// deletion bytes count
+  int delcount;
+  /// appending index
+  int append;
+  /// byte to append
+  int appendbyte;
+};
+
 /// Direction specifier of replacement rule.
 enum {
   ALL = 0,
@@ -200,8 +214,7 @@ struct tracker_s {
   /// Connection state
   enum state_e state;
   /// By connection TTL
-  int* live;
-
+  struct rule_item* live;
   /// chain it !
   struct tracker_s * n;
 };
@@ -234,7 +247,7 @@ int rules;
 struct rule_s *rule;
 /// TTL part of the rule as a flat array to be able to copy it
 /// in tracker_s::live for each connections.
-int *rule_live;
+struct rule_item *rule_live;
 
 /// List of connections.
 struct tracker_s * connections = NULL;
@@ -507,7 +520,7 @@ void parse_params(int argc,char* argv[]) {
 
   // allocate rule arrays, rule number is number of params after 5
   rule=malloc((argc-optind)*sizeof(struct rule_s));
-  rule_live=malloc((argc-optind)*sizeof(int));
+  rule_live = malloc((argc - optind) * sizeof(struct rule_item));
   // parse rules
   for (i=optind;i<argc;i++) {
     char *fs=0, *ts=0, *cs=0;
@@ -529,8 +542,16 @@ void parse_params(int argc,char* argv[]) {
         rule[rules].dir = (*cs=='i'||*cs=='I') ? IN : OUT;
         cs++;
       }
-    if (cs && *cs) /* Only non-trivial quantifiers count. */
-      rule_live[rules]=atoi(cs); else rule_live[rules]=-1;
+    if (cs && *cs) { /* Only non-trivial quantifiers count. */
+      rule_live[rules].count = atoi(cs);
+      // to set rule with no count? nonsense
+      if (rule_live[rules].count == 0)
+        rule_live[rules].count = -1;
+      else
+        DBG("Live %d count\n", rule_live[rules].count);
+    }
+    else
+      rule_live[rules].count = -1;
     shrink_to_binary(&rule[rules]);
 //    printf("DEBUG: (%s) (%s)\n",rule[rules].from,rule[rules].to);
     rules++;
@@ -602,7 +623,7 @@ char b2[MAX_BUF];
 /// @param siz useful size of the data in buf.
 /// @param live TTL state of current connection.
 /// @param packet direction
-int sed_the_buffer(int siz, int* live, int dir) {
+int sed_the_buffer(int siz, struct rule_item* live, int dir) {
   int i=0,j=0;
   int newsize=0;
   int changes=0;
@@ -612,12 +633,12 @@ int sed_the_buffer(int siz, int* live, int dir) {
     for (j=0;j<rules;j++) {
       if (rule[j].dir != ALL && rule[j].dir !=dir) continue;
 
-      if ((!memcmp(&buf[i],rule[j].from,rule[j].fs)) && (live[j]!=0)) {
+      if ((! memcmp(&buf[i], rule[j].from, rule[j].fs)) && (live[j].count != 0)) {
         changes++;
         gotchange=1;
         printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
-        live[j]--;
-        if (live[j]==0) printf("    (rule just expired)\n");
+        live[j].count--;
+        if (live[j].count == 0) printf("    (rule just expired)\n");
         memcpy(&b2[newsize],rule[j].to,rule[j].ts);
         newsize+=rule[j].ts;
         i+=rule[j].fs;
@@ -885,9 +906,9 @@ int main(int argc,char* argv[]) {
         conn->csock = csock;
         conn->time = now;
 
-        conn->live = malloc(rules*sizeof(int));
+        conn->live = malloc(rules * sizeof(struct rule_item));
         if(NULL == conn->live) error("netsed: unable to malloc() connection tracker sockaddr struct");
-        memcpy(conn->live, rule_live, rules*sizeof(int));
+        memcpy(conn->live, rule_live, rules * sizeof(struct rule_item));
 
         l = sizeof(s);
 #ifndef LINUX_NETFILTER
