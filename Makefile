@@ -1,4 +1,7 @@
 CFLAGS += -Wall -fomit-frame-pointer
+ifdef DEBUG
+	CFLAGS += -DDEBUG
+endif
 PREFIX ?= /usr/local
 
 ifeq "$(shell uname -s)" "SunOS"
