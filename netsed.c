@@ -294,8 +294,12 @@ void usage_hints(const char* why) {
   ERR("            address of incoming connection, see README)\n");
   ERR("  rport   - destination port (0 = dst port of incoming connection)\n");
   ERR("  ruleN   - replacement rules (see below)\n\n");
-  ERR("General syntax of replacement rules: s/pat1/pat2[/expire][-N[:M]][+X:C]\n\n");
+  ERR("General syntax of replacement rules: s/pat1/pat2[-N[:M]][+X:C][/expire]\n\n");
   ERR("This will replace all occurrences of pat1 with pat2 in any matching packet.\n");
+  ERR("\"-N[:M]\" is the deletion rule 'Delete M bytes after Nth byte starting from'\n");
+  ERR("the beginning of the replacement'. M can be omitted and equals 1 by default.\n");
+  ERR("\"+X[:C]\" is the addition rule 'Add one byte with the code C after Xth byte starting from'\n");
+  ERR("the beginning of the replacement'. C can be omitted and equals 0 by default.\n");
   ERR("An additional parameter, 'expire' of the form [CHAR][NUM], can be used to\n");
   ERR("expire a rule after NUM successful substitutions during a given connection.\n");
   ERR("The character CHAR is one of \"iIoO\", with the effect of restricting the rule\n");
@@ -314,11 +318,11 @@ void usage_hints(const char* why) {
   ERR("                        - let Rilke travel incognito as Proust\n\n");
   ERR("  's/%%FF%%AA/%%AA%%FF/i-12:3'\n");
   ERR("  's/%%FF%%AA/%%AA%%FF/i/-12:3'\n");
-  ERR("                        - Exchange \\xFF0 and \\xAA and delete three bytes after 12th byte\n");
+  ERR("                        - Exchange \\xFF and \\xAA and delete three bytes after 12th byte\n");
   ERR("                          from the beginning of sequence in server's responses\n\n");
   ERR("  's/%%FF%%AA/%%AA%%FF/o+11:64'\n");
   ERR("  's/%%FF%%AA/%%AA%%FF/o/+11:64'\n");
-  ERR("                        - Exchange \\xFF0 and \\xAA and add byte with code 64 after 11th byte\n");
+  ERR("                        - Exchange \\xFF and \\xAA and add byte with code 64 after 11th byte\n");
   ERR("                          from the beginning of sequence in client's requests\n\n");
   ERR("Rules are not active across packet boundaries, and they are evaluated\n");
   ERR("from first to last, not yet expired rule, as stated on the command line.\n");

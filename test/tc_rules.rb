@@ -75,6 +75,28 @@ class TC_RuleTest < Test::Unit::TestCase
     TCP_RuleCheck('a a aa aaa aaaa' ,"b b bb bbb bbbb", ['s/a/b/'])
   end
 
+  # Check deletion rules
+  def test_deletion_rule
+    TCP_RuleCheck('a123456aaa cdaa', "b456bcdb", ['s/a/b/-1:3'])
+  end
+
+  # Check deletion+ttl rules
+  def test_deletion_ttl_rule
+    TCP_RuleCheck('a123456aaa cdaa', "b456aaa cdaa", ['s/a/b/-1:3/1'])
+    TCP_RuleCheck('a123456aaa cdaa', "b456bcdaa", ['s/a/b/-1:3/2'])
+  end
+
+  # Check addition rules
+  def test_addition_rule
+    TCP_RuleCheck('a123456aaa cdaa', "b1#23456ba#a cdba", ['s/a/b/+2:35'])
+  end
+
+  # Check addition+ttl rules
+  def test_addition_ttl_rule
+    TCP_RuleCheck('a123456aaa cdaa', "b1#23456aaa cdaa", ['s/a/b/+2:35/1'])
+    TCP_RuleCheck('a123456aaa cdaa', "b1#23456ba#a cdaa", ['s/a/b/+2:35/2'])
+  end
+
   # General rule checker method in chat mode
   # - _datasent_ is an array of data to sent 0:client 1:server, 
   # - _dataexpect_ are the corresponding expected data on the other side,
@@ -113,6 +135,62 @@ class TC_RuleTest < Test::Unit::TestCase
       ['client: bla bla Rilke Rilke', 'server: ok Proust ok Proust'],
       ['client: bla bla Proust Rilke', 'server: ok Rilke ok Proust'],
       ['s/Rilke/Proust/o1', 's/Proust/Rilke/i1'])
+  end
+
+  # Check deletion+direction rules
+  # tests based on tcp chat: test_case_04_Chat
+  def test_deletion_direction_rule
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Proust', 'server: ok Proust-ok-Rilke bla'],
+      ['client: bla bla Prousta-Proust', 'server: ok Rilke-k-Rilke bla'],
+      ['s/Rilke/Proust/O-4:3', 's/Proust/Rilke/i-7'])
+    # test with a splitter
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Proust', 'server: ok Proust-ok-Rilke bla'],
+      ['client: bla bla Prousta-Proust', 'server: ok Rilke-k-Rilke bla'],
+      ['s/Rilke/Proust/O/-4:3', 's/Proust/Rilke/i/-7'])
+  end
+
+  # Check deleteion+direction+ttl rules
+  # tests based on tcp chat: test_case_04_Chat
+  def test_deletion_direction_ttl_rule
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla Rilke bla-bla', 'server: ok Proust+ok-Proust bla-bla'],
+      ['client: bla bla Proust ba Rilke bla-bla', 'server: ok Rilke-Proust bla-bla'],
+      ['s/Rilke/Proust/o-7/1', 's/Proust/Rilke/i-6:3/1'])
+    # test with a splitter
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla Rilke bla-bla', 'server: ok Proust+ok-Proust bla-bla'],
+      ['client: bla bla Proust ba Rilke bla-bla', 'server: ok Rilke-Proust bla-bla'],
+      ['s/Rilke/Proust/o/-7/1', 's/Proust/Rilke/i/-6:3/1'])
+  end
+
+  # Check addition+direction rules
+  # tests based on tcp chat: test_case_04_Chat
+  def test_addition_direction_rule
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Proust', 'server: ok Proust-ok-Rilke bla'],
+      ['client: bla bla Proust bla#-Proust', 'server: ok Rilke-$ok-Rilke bla'],
+      ['s/Rilke/Proust/O+9:35', 's/Proust/Rilke/i+7:36'])
+    # test with a splitter
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Proust', 'server: ok Proust-ok-Rilke bla'],
+      ['client: bla bla Proust bla#-Proust', 'server: ok Rilke-$ok-Rilke bla'],
+      ['s/Rilke/Proust/O/+9:35', 's/Proust/Rilke/i/+7:36'])
+  end
+
+  # Check addition+direction+ttl rules
+  # tests based on tcp chat: test_case_04_Chat
+  def test_addition_direction_ttl_rule
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Rilke-ok+Proust', 'server: ok Proust-ok-Proust bla'],
+      ['client: bla bla Proust bla#-Rilke-ok+Proust', 'server: ok Rilke-$ok-Proust bla'],
+      ['s/Rilke/Proust/O+9:35/1', 's/Proust/Rilke/i+7:36/1'])
+    # test with a splitter
+    TCP_RuleChatCheck(
+      ['client: bla bla Rilke bla-Rilke-ok+Proust', 'server: ok Proust-ok-Proust bla'],
+      ['client: bla bla Proust bla#-Rilke-ok+Proust', 'server: ok Rilke-$ok-Proust bla'],
+      ['s/Rilke/Proust/O/+9:35/1', 's/Proust/Rilke/i/+7:36/1'])
   end
 
 end
