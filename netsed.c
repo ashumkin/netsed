@@ -1,5 +1,5 @@
 /*
-  netsed 1.3       (C) 2010-2012  Julien VdG <julien@silicone.homelinux.org>
+  netsed 1.4       (C) 2010-2012  Julien VdG <julien@silicone.homelinux.org>
                    (C) 2015          Alexey Shumkin <alex.crezoff@gmail.com>
   --------------------------------------------------------------------------
 
@@ -127,7 +127,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #endif
 
 /// Current version (recovered by Makefile for several release checks)
-#define VERSION "1.3 mod"
+#define VERSION "1.4 mod"
 /// max size for buffers
 #define MAX_BUF  100000
 
@@ -237,6 +237,9 @@ int lsock;
 /// Address family used for parameter resolution
 int family = AF_UNSPEC;
 
+/// foreground (do not detach)
+int foreground = 0;
+
 /// TCP or UDP.
 int tcp;
 
@@ -281,10 +284,12 @@ void usage_hints(const char* why) {
   ERR("  options - can be --ipv4 or -4 to force address resolution in IPv4,\n");
   ERR("            --ipv6 or -6 to force address resolution in IPv6,\n");
   ERR("            --ipany to resolve the address in either IPv4 or IPv6.\n");
+  ERR("            --foreground or -f to run if foreground (do not fork),\n");
   ERR("          - --help or -h to display this usage information.\n");
 #else
   ERR("  options - can be nothing, -4 to force address resolution in IPv4\n");
   ERR("            or -6 to force address resolution in IPv6.\n");
+  ERR("            -f to run if foreground (do not fork),\n");
   ERR("          - -h to display this usage information.\n");
 #endif
   ERR("  proto   - protocol specification (tcp or udp)\n");
@@ -498,13 +503,14 @@ void parse_params(int argc,char* argv[]) {
     {"ipv4", 0, 0, '4'},
     {"ipv6", 0, 0, '6'},
     {"help", 0, 0, 'h'},
+    {"foreground", 0, 0, 'f'},
     {"ipany", 0, &family, AF_UNSPEC},
     {0, 0, 0, 0}
   };
 
-  while ((i = getopt_long(argc, argv, "46h", long_options, NULL)) != -1)
+  while ((i = getopt_long(argc, argv, "46hf", long_options, NULL)) != -1)
 #else
-  while ((i = getopt(argc, argv, "46h")) != -1)
+  while ((i = getopt(argc, argv, "46hf")) != -1)
 #endif
   {
     switch(i) {
@@ -515,6 +521,9 @@ void parse_params(int argc,char* argv[]) {
       break;
     case '6':
       family = AF_INET6;
+      break;
+    case 'f':
+      foreground = 1;
       break;
     case 'h':
       usage_hints(NULL);
@@ -889,6 +898,17 @@ int main(int argc,char* argv[]) {
     printf("[+] Using dynamic (transparent proxy) forwarding with fixed addr %s.\n",rhost);
   else
     printf("[+] Using dynamic (transparent proxy) forwarding.\n");
+  if (foreground) {
+      printf("Run in foreground...\n");
+  } else {
+    int x = fork();
+    if (x == -1) {
+      printf("Error creating a fork. Run in foreground...\n");
+    } else if (x) {
+      printf("Detached: PID=%d\n", x);
+      exit(0);
+    }
+  }
 
   bind_and_listen(fixedhost.ss_family, tcp, lport);
 

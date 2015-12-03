@@ -40,7 +40,7 @@ class NetsedRun
 
   # Launch netsed with given parameters.
   def initialize(proto, lport, rhost, rport, rules, options='')
-    @cmd="../netsed #{options} #{proto} #{lport} #{rhost} #{rport} #{rules.join(' ')}"
+    @cmd="../netsed --foreground #{options} #{proto} #{lport} #{rhost} #{rport} #{rules.join(' ')}"
     @pipe=IO.popen(@cmd)
     @data=''
     @pipe.sync = true
