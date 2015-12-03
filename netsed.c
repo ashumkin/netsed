@@ -570,7 +570,7 @@ void parse_params(int argc,char* argv[]) {
         rule[rules].dir = (*cs=='i'||*cs=='I') ? IN : OUT;
         cs++;
       }
-    rule[rules].delindex = 0;
+    rule[rules].delindex = -1;
     rule[rules].delcount = 1;
     rule[rules].append = 0;
     rule[rules].appendbyte = 0;
@@ -583,6 +583,8 @@ void parse_params(int argc,char* argv[]) {
         rule[rules].delcount = strtol(++cs, &cs, 10);
       }
       DBG("Delete %d byte(s) after %d\n", rule[rules].delcount, rule[rules].delindex);
+      // make an "index" from "count"
+      rule[rules].delindex--;
     }
     /* Is there an appending part?  */
     if (cs && *cs && strchr("+", *cs)) {
@@ -684,7 +686,7 @@ int sed_the_buffer(int siz, struct rule_item* live, int dir) {
   int active_append_rule = -1;
   // find the "active" rule for the deletion
   for (j = 0; j < rules; j++)
-    if (live[j].delindex > 0)
+    if (live[j].delindex >= 0)
       active_deletion_rule = j;
   // find the "active" rule for the appending
   for (j = 0; j < rules; j++)
@@ -703,10 +705,10 @@ int sed_the_buffer(int siz, struct rule_item* live, int dir) {
           printf("    Applying rule s/%s/%s...\n",rule[j].forig,rule[j].torig);
           live[j].count--;
           if (live[j].count == 0) printf("    (rule just expired)\n");
-          if ((live[j].delindex = rule[j].delindex) > 0) {
+          if ((live[j].delindex = rule[j].delindex) >= 0) {
             live[j].delindex += i;
             live[j].delcount = rule[j].delcount;
-            DBG("Deleting %d bytes after %d bytes\n", live[j].delcount, live[j].delindex);
+            DBG("Deleting %d bytes after %d bytes\n", live[j].delcount, live[j].delindex + 1);
             active_deletion_rule = j;
           }
           if ((live[j].append = rule[j].append) > 0) {
@@ -744,7 +746,7 @@ int sed_the_buffer(int siz, struct rule_item* live, int dir) {
         DBG("Skipping %dth byte\n", i);
         if (--(live[active_deletion_rule].delcount) == 0) {
           DBG("All bytes deleted\n");
-          live[active_deletion_rule].delindex = 0;
+          live[active_deletion_rule].delindex = -1;
           // "turn off"
           active_deletion_rule = -1;
         } else

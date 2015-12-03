@@ -1,6 +1,8 @@
 2015-12-05; netsed 1.4:
   - new feature from Alexey Shumkin:
     - Run detached and add -f/--foreground option
+  - fix from Alexey Shumkin:
+    - Indexes in deletion and addition rules must be "human-readable" but not 0-based.
 
 2015-11-20; netsed 1.3:
   - new feature from Alexey Shumkin:

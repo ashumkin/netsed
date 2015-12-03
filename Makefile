@@ -30,7 +30,7 @@ check_version:
 .PHONY: test
 
 test: netsed
-	ruby test/ts_full.rb
+	ruby -d test/ts_full.rb
 
 test/doc:
 	cd test;LANG=C rdoc -a --inline-source -d *.rb
