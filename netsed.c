@@ -491,6 +491,16 @@ void shrink_to_binary(struct rule_s* r) {
   }
 }
 
+/// initialize rule_live array with initials from rule array
+void init_rules_live() {
+  int i;
+  for(i = 0; i < rules; i++) {
+    rule_live[i].delindex = rule[i].delindex;
+    rule_live[i].delcount = rule[i].delcount;
+    rule_live[i].append = rule[i].append;
+  }
+}
+
 /// parse the command line parameters
 /// @param argc number of arguments
 /// @param argv array of string parameters
@@ -612,6 +622,7 @@ void parse_params(int argc,char* argv[]) {
   }
 
   printf("[+] Loaded %d rule%s...\n", rules, (rules > 1) ? "s" : "");
+  init_rules_live();
 
 }
 
