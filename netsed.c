@@ -127,7 +127,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #endif
 
 /// Current version (recovered by Makefile for several release checks)
-#define VERSION "1.4 mod"
+#define VERSION "1.4-mod"
 /// max size for buffers
 #define MAX_BUF  100000
 
