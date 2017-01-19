@@ -7,7 +7,7 @@ Group:		System Environment/Base
 License:	GPLv2+
 URL:		http://github.com/ashumkin/netsed
 Source0:	netsed-ashumkin-mod-%{version}.tar.gz
-Packager:	Alexey Shumkin <alex.crezoff@gmail.com>
+Packager:	%{packager}
 
 %define debug_package %{nil}
 
